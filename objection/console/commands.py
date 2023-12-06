@@ -11,12 +11,14 @@ from ..commands import sqlite
 from ..commands import ui
 from ..commands.android import clipboard
 from ..commands.android import command
+from ..commands.android import general
 from ..commands.android import generate as android_generate
 from ..commands.android import heap as android_heap
 from ..commands.android import hooking as android_hooking
 from ..commands.android import intents
 from ..commands.android import keystore
 from ..commands.android import pinning as android_pinning
+from ..commands.android import proxy as android_proxy
 from ..commands.android import root
 from ..commands.ios import binary
 from ..commands.ios import bundles
@@ -26,6 +28,7 @@ from ..commands.ios import heap as ios_heap
 from ..commands.ios import hooking as ios_hooking
 from ..commands.ios import jailbreak
 from ..commands.ios import keychain
+from ..commands.ios import monitor as ios_crypto
 from ..commands.ios import nsurlcredentialstorage
 from ..commands.ios import nsuserdefaults
 from ..commands.ios import pasteboard
@@ -62,6 +65,11 @@ COMMANDS = {
     'reconnect': {
         'meta': 'Reconnect to the current device',
         'exec': None,  # handled in the Repl class itself
+    },
+
+    'resume': {
+        'meta': 'Resume the attached process',
+        'exec': None
     },
 
     'import': {
@@ -273,6 +281,10 @@ COMMANDS = {
     'android': {
         'meta': 'Commands specific to Android',
         'commands': {
+            'deoptimize': {
+                'meta': 'Force the VM to execute everything in the interpreter',
+                'exec': general.deoptimise
+            },
             'shell_exec': {
                 'meta': 'Execute a shell command',
                 'exec': command.execute
@@ -291,6 +303,10 @@ COMMANDS = {
                                 'meta': 'List the methods available on a class',
                                 'exec': android_hooking.show_android_class_methods
                             },
+                            'class_loaders': {
+                                'meta': 'List the registered class loaders',
+                                'exec': android_hooking.show_android_class_loaders
+                            },
                             'activities': {
                                 'meta': 'List the registered Activities',
                                 'exec': android_hooking.show_registered_activities
@@ -307,25 +323,16 @@ COMMANDS = {
                     },
                     'watch': {
                         'meta': 'Watch for Android Java invocations',
-                        'commands': {
-                            'class': {
-                                'meta': 'Watches for invocations of all methods in a class',
-                                'flags': ['--dump-args', '--dump-backtrace', '--dump-return'],
-                                'exec': android_hooking.watch_class,
-                            },
-                            'class_method': {
-                                'meta': 'Watches for invocations of a specific class method',
-                                'flags': ['--dump-args', '--dump-backtrace', '--dump-return'],
-                                'exec': android_hooking.watch_class_method
-                            }
-                        }
+                        'exec': android_hooking.watch,
+                        'flags': ['--dump-args', '--dump-backtrace', '--dump-return']
                     },
                     'set': {
                         'meta': 'Set various values',
                         'commands': {
                             'return_value': {
                                 'meta': 'Set a methods return value. Supports only boolean returns.',
-                                'exec': android_hooking.set_method_return_value
+                                'exec': android_hooking.set_method_return_value,
+                                'flags': ['--dump-args', '--dump-return', '--dump-backtrace']
                             }
                         }
                     },
@@ -340,16 +347,12 @@ COMMANDS = {
                     },
                     'search': {
                         'meta': 'Search for various classes and or methods',
-                        'commands': {
-                            'classes': {
-                                'meta': 'Search for Java classes matching a name',
-                                'exec': android_hooking.search_class
-                            },
-                            'methods': {
-                                'meta': 'Search for Java methods matching a name',
-                                'exec': android_hooking.search_methods
-                            }
-                        }
+                        'exec': android_hooking.search,
+                        'flags': ['--json', '--only-classes']
+                    },
+                    'notify': {
+                        'meta': 'Notify when a class becomes available',
+                        'exec': android_hooking.notify
                     },
                     'generate': {
                         'meta': 'Generate Frida hooks for Android',
@@ -380,7 +383,7 @@ COMMANDS = {
                         }
                     },
                     'print': {
-                        'meta': 'Print information about objects on the iOS heap',
+                        'meta': 'Print information about objects on the Android heap',
                         'commands': {
                             'fields': {
                                 'meta': 'Print instance fields for a Java object handle',
@@ -410,6 +413,11 @@ COMMANDS = {
                     'list': {
                         'meta': 'Lists entries in the Android KeyStore',
                         'exec': keystore.entries
+                    },
+                    'detail': {
+                        'meta': 'Lists details for all items in the Android KeyStore',
+                        'flags': ['--json'],
+                        'exec': keystore.detail
                     },
                     'clear': {
                         'meta': 'Clears the Android KeyStore',
@@ -466,6 +474,15 @@ COMMANDS = {
                     }
                 }
             },
+            'proxy': {
+                'meta': 'Commands to work with a proxy for the application',
+                'commands': {
+                    'set': {
+                        'meta': 'Set a proxy for the application',
+                        'exec': android_proxy.android_proxy_set
+                    }
+                }
+            },
             'ui': {
                 'meta': 'Android user interface commands',
                 'commands': {
@@ -481,9 +498,8 @@ COMMANDS = {
             },
         },
     },
-
     # ios commands
-    'ios': {
+        'ios': {
         'meta': 'Commands specific to iOS',
         'commands': {
             'info': {
@@ -651,18 +667,8 @@ COMMANDS = {
                     },
                     'watch': {
                         'meta': 'Watch invocations of classes and methods',
-                        'commands': {
-                            'class': {
-                                'meta': 'Hook all methods in a class and report on invocations',
-                                'flags': ['--include-parents'],
-                                'exec': ios_hooking.watch_class
-                            },
-                            'method': {
-                                'meta': 'Hook a specific method and report on invocations',
-                                'flags': ['--dump-args', '--dump-backtrace', '--dump-return'],
-                                'exec': ios_hooking.watch_class_method
-                            }
-                        }
+                        'exec': ios_hooking.watch,
+                        'flags': ['--dump-args', '--dump-backtrace', '--dump-return'],
                     },
                     'set': {
                         'meta': 'Set various values',
@@ -675,16 +681,8 @@ COMMANDS = {
                     },
                     'search': {
                         'meta': 'Search for various classes and or methods',
-                        'commands': {
-                            'classes': {
-                                'meta': 'Search for Objective-C classes matching a name',
-                                'exec': ios_hooking.search_class
-                            },
-                            'methods': {
-                                'meta': 'Search for Objective-C method matching a name',
-                                'exec': ios_hooking.search_method
-                            }
-                        }
+                        'exec': ios_hooking.search,
+                        'flags': ['--json', '--only-classes']
                     },
                     'generate': {
                         'meta': 'Generate Frida hooks for iOS',
@@ -697,7 +695,7 @@ COMMANDS = {
                                 'meta': 'Simple hooks for each Class method',
                                 'exec': ios_generate.simple
                             }
-                        }
+                        },
                     }
                 }
             },
@@ -732,7 +730,16 @@ COMMANDS = {
                         'exec': jailbreak.simulate
                     },
                 }
-            }
+            },
+            'monitor': {
+                'meta': 'Commands to work with ios function monitoring',
+                'commands': {
+                    'crypto': {
+                        'meta': 'Monitor CommonCrypto operations',
+                        'exec': ios_crypto.crypto_enable
+                    }
+                },
+            },
         }
     },
 
